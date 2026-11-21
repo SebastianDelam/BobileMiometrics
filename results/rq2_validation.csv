@@ -1,0 +1,4 @@
+enrollment_key_events,observation_key_events,scaling,validation_eer,validation_threshold
+50,360,PCA and GaussianNB,0.4751209762255418,0.001002004008016033
+100,360,PCA and GaussianNB,0.1362297496318115,0.001002004008016033
+200,360,PCA and GaussianNB,0.04071112981274984,0.590180360721443
