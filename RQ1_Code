@@ -1,38 +1,37 @@
 """Extra figures for the BobileMiometrics report.
- 
-  1. DET curves with INSUFFICIENT enrollment (50 key events) for free and fixed text.
+
+  1. DET curves at a small enrollment budget (50 key events) vs larger ones, for free and fixed text.
   2. Two takeover examples: too little impostor data (not flagged) vs. enough (flagged).
- 
+
 Put this file next to main.py and run, for example:
     python make_figures.py --data-dir "$env:USERPROFILE/Downloads" --output-dir results
- 
+
 It imports the project's own loaders, user filter, data splits, models, Evaluator and
 takeover simulator, so every number matches the main run. Only numpy, matplotlib and
 scikit-learn are needed (see requirements.txt).
 """
- 
+
 import argparse
 from pathlib import Path
- 
+
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
- 
+
 from data import load_windows
 from fixed_text import FixedMatcher, load_features
 from main import fixed_experiment, free_experiment, split_recording
 from matching import combine_observations, describe, match
 from performance import Evaluator, NUM_THRESHOLDS
 from takeovers import simulate
- 
-TARGET_EER = 0.06          # the 6% target from the research question
-INSUFFICIENT_EVENTS = 50   # smallest enrollment budget the project tested
+
+SMALL_BUDGET_EVENTS = 50   # smallest enrollment budget the project tested (the emphasized curve)
 OWNER_BLUE, IMPOSTOR_RED, THRESH_GOLD = "#2b6cb0", "#c53030", "#b7791f"
 ACCEPT_BG, ALARM_BG = "#eef4fb", "#fdeeee"
- 
- 
+
+
 # ----------------------------------------------------------------------------- data
 def load_cohort(data_dir):
     """Same data loading and eligibility rule as main.main()."""
@@ -44,8 +43,8 @@ def load_cohort(data_dir):
         len(d.get((u, "1"), [])) >= 20 and len(d.get((u, "2"), [])) >= 20
         for d in (free, fixed))]
     return free, fixed, users
- 
- 
+
+
 def free_test_scores(free, users, budget, block, scaling):
     """main.free_experiment's construction, for any enrollment budget (base windows)."""
     enrollment, testing = [], []
@@ -54,8 +53,8 @@ def free_test_scores(free, users, budget, block, scaling):
         enrollment.append(describe(reserved[:budget], "free"))
         testing.append(combine_observations(describe(test[-2 * block:], "free"), block, "mean"))
     return match(np.array(enrollment), np.array(testing), scaling)
- 
- 
+
+
 def fixed_test_scores(fixed, users, budget):
     """main.fixed_experiment's construction, for any enrollment budget (password entries)."""
     enrollment, testing = [], []
@@ -65,8 +64,8 @@ def fixed_test_scores(fixed, users, budget):
         testing.append(np.median(test[-36:], axis=0))
     matcher = FixedMatcher().fit(np.array(enrollment))
     return matcher.scores(np.array(testing)[:, None])
- 
- 
+
+
 def error_rates(scores, output_dir):
     """FPR/FNR/EER with the project's own Evaluator (500 sampled thresholds)."""
     genuine = np.eye(len(scores), dtype=bool)
@@ -75,15 +74,12 @@ def error_rates(scores, output_dir):
     fpr, fnr, _ = evaluator.compute_rates()
     eer, _ = evaluator.get_EER(fpr, fnr)
     return fpr, fnr, eer
- 
- 
+
+
 # ----------------------------------------------------------------------------- DET
 def plot_det(path, title, subtitle, curves, footnote, note=None):
     """curves: list of dicts (label, fpr, fnr, eer, color, lw, ls, marker). Styled like det_*.png."""
-    from matplotlib.patches import Patch
     fig, ax = plt.subplots(figsize=(7, 4.9))
-    ax.add_patch(Rectangle((0, 0), TARGET_EER, TARGET_EER, color="#38a169", alpha=0.35,
-                           zorder=1, linewidth=0))
     for z, c in enumerate(reversed(curves), start=2):          # first curve is drawn on top
         ax.plot(c["fpr"], c["fnr"], color=c["color"], linewidth=c["lw"], linestyle=c["ls"],
                 zorder=z)
@@ -94,8 +90,7 @@ def plot_det(path, title, subtitle, curves, footnote, note=None):
             ax.scatter([c["fpr"][index]], [c["fnr"][index]], color=c["color"], zorder=10, s=36)
     handles = [plt.Line2D([], [], color=c["color"], lw=c["lw"], ls=c["ls"], label=c["label"])
                for c in curves]
-    handles += [plt.Line2D([], [], color="gray", lw=0.8, ls="--", label="FPR = FNR"),
-                Patch(facecolor="#38a169", alpha=0.35, label=f"target zone (EER < {TARGET_EER:.0%})")]
+    handles += [plt.Line2D([], [], color="gray", lw=0.8, ls="--", label="FPR = FNR")]
     ax.legend(handles=handles, loc="upper right", fontsize=8.3, framealpha=0.95)
     if note:
         x, y, text = note
@@ -111,8 +106,8 @@ def plot_det(path, title, subtitle, curves, footnote, note=None):
     fig.subplots_adjust(top=0.86, bottom=0.17, left=0.11, right=0.97)
     fig.savefig(path, dpi=300)
     plt.close(fig)
- 
- 
+
+
 # ----------------------------------------------------------------------------- takeovers
 def build_takeover_data(fixed, users):
     """Run the project's own RQ3 simulation for the selected fixed-text model."""
@@ -124,11 +119,11 @@ def build_takeover_data(fixed, users):
     rejected = streams < threshold
     first = np.where(rejected.any(axis=1), rejected.argmax(axis=1) + 1, 0)   # 0 = never flagged
     n_other = len(users) - 1
- 
+
     def share_flagged(units):
         f = first[eligible]
         return float(((f > 0) & (f <= units)).mean())
- 
+
     median_delay = int(np.median(first[eligible & (first > 0)]))
     p90_delay = int(np.quantile(first[eligible & (first > 0)], 0.9))
     typical = np.median(streams[eligible], axis=0)
@@ -143,8 +138,8 @@ def build_takeover_data(fixed, users):
                 median_delay=median_delay, p90_delay=p90_delay, best=best, others=others,
                 owner=users[owner], attacker=users[attacker], n_eligible=int(eligible.sum()),
                 n_total=len(streams), setting=setting)
- 
- 
+
+
 def plot_takeover(path, info, snapshot, title, subtitle, stat_text):
     """Draw the takeover as it looks after `snapshot` impostor entries (data after that is hidden)."""
     d = info
@@ -153,7 +148,7 @@ def plot_takeover(path, info, snapshot, title, subtitle, stat_text):
     fig = plt.figure(figsize=(8.2, 6.4))
     gs = fig.add_gridspec(2, 1, height_ratios=[4.3, 0.7], hspace=0.55)
     ax, bar = fig.add_subplot(gs[0]), fig.add_subplot(gs[1])
- 
+
     # background regions: accepted (above the threshold) and alarm (below it)
     ax.axhspan(thr, 1.08, color=ACCEPT_BG, zorder=0)
     ax.axhspan(-0.05, thr, color=ALARM_BG, zorder=0)
@@ -164,7 +159,7 @@ def plot_takeover(path, info, snapshot, title, subtitle, stat_text):
     ax.text(label_x, 0.86, "later impostor entries\nnot yet typed", ha="center", va="center",
             fontsize=9, color="#666", style="italic", zorder=2,
             bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="none", alpha=0.95))
- 
+
     # threshold, with labels on both sides of it
     ax.axhline(thr, color=THRESH_GOLD, ls="--", lw=1.6, zorder=3)
     backing = dict(boxstyle="square,pad=0.15", fc="white", ec="none", alpha=0.9)
@@ -177,13 +172,13 @@ def plot_takeover(path, info, snapshot, title, subtitle, stat_text):
     ax.text(median_delay + 0.4, 1.045, f"median alarm point: entry {median_delay}", fontsize=8,
             color="#4a5568", va="center", ha="left", zorder=4,
             bbox=dict(boxstyle="square,pad=0.15", fc=ACCEPT_BG, ec="none", alpha=0.9))
- 
+
     # context: 40 other simulated takeovers
     x = np.arange(horizon + 1)
     for i in d["others"]:
         y = np.concatenate(([d["starts"][i]], d["streams"][i]))
         ax.plot(x[:snapshot + 1], y[:snapshot + 1], color="0.5", lw=0.9, alpha=0.38, zorder=2)
- 
+
     # the example stream
     i = d["best"]
     y = np.concatenate(([d["starts"][i]], d["streams"][i]))
@@ -203,7 +198,7 @@ def plot_takeover(path, info, snapshot, title, subtitle, stat_text):
         ax.annotate("no alarm yet", xy=(snapshot, y[snapshot]), xytext=(snapshot + 1.8, 0.80),
                     fontsize=9.5, fontweight="bold", color=OWNER_BLUE,
                     arrowprops=dict(arrowstyle="->", color=OWNER_BLUE, lw=1.3), zorder=8)
- 
+
     ax.text(0.012, 0.15, stat_text, transform=ax.transAxes, fontsize=9, va="center", zorder=8,
             bbox=dict(boxstyle="round,pad=0.45", fc="white", ec="#a0aec0", lw=0.8))
     ax.set(xlim=(-0.8, horizon + 0.8), ylim=(-0.05, 1.08),
@@ -215,7 +210,7 @@ def plot_takeover(path, info, snapshot, title, subtitle, stat_text):
     top = ax.secondary_xaxis("top", functions=(lambda v: v * 10, lambda v: v / 10))
     top.set_xlabel("≈ impostor key events (10 per entry)", fontsize=9)
     top.set_xticks(range(0, horizon * 10 + 1, 60))
- 
+
     # what the decision window holds right now: oldest entries on the left, newest on the right
     window = 36
     owner_n, impostor_n = window - snapshot, snapshot
@@ -233,7 +228,7 @@ def plot_takeover(path, info, snapshot, title, subtitle, stat_text):
     bar.axis("off")
     bar.set_title(f"What the system judges right now (median of the last 36 entries): "
                   f"{owner_n} owner + {impostor_n} impostor", fontsize=9, loc="left", pad=6)
- 
+
     fig.suptitle(title, fontsize=13.5, fontweight="bold", y=0.985)
     fig.text(0.5, 0.93, subtitle, ha="center", fontsize=9.5, color="#333")
     s = d["setting"]
@@ -247,8 +242,8 @@ def plot_takeover(path, info, snapshot, title, subtitle, stat_text):
     fig.subplots_adjust(top=0.815, bottom=0.175, left=0.095, right=0.975)
     fig.savefig(path, dpi=300)
     plt.close(fig)
- 
- 
+
+
 # ----------------------------------------------------------------------------- main
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
@@ -257,63 +252,63 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).parent / "results")
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
- 
+
     free, fixed, users = load_cohort(args.data_dir)
-    weak_windows = INSUFFICIENT_EVENTS // 10
- 
-    # ---- 1. DET curves with insufficient enrollment ----------------------------------
+    weak_windows = SMALL_BUDGET_EVENTS // 10
+
+    # ---- 1. DET curves at different enrollment budgets ----------------------------------
     s_free, scores_free, _, _ = free_experiment(free, users)
     block, scaling = s_free["observation_key_events"] // 10, s_free["scaling"]
     free_weak = free_test_scores(free, users, weak_windows, block, scaling)
     free_best_check = free_test_scores(free, users, s_free["enrollment_key_events"] // 10, block, scaling)
     assert np.allclose(free_best_check, scores_free), "free-text rebuild differs from main.py"
- 
+
     s_fixed, scores_fixed, _, _ = fixed_experiment(fixed, users)
     fixed_weak = fixed_test_scores(fixed, users, weak_windows)
     fixed_best_check = fixed_test_scores(fixed, users, s_fixed["enrollment_key_events"] // 10)
     assert np.allclose(fixed_best_check, scores_fixed), "fixed-text rebuild differs from main.py"
- 
+
     def curve(label, scores, color, lw, ls, marker=False):
         fpr, fnr, eer = error_rates(scores, args.output_dir)
         return dict(label=label.format(eer=eer), fpr=fpr, fnr=fnr, eer=eer, color=color, lw=lw,
                     ls=ls, marker=marker)
- 
+
     n_free_best, n_fixed_best = s_free["enrollment_key_events"], s_fixed["enrollment_key_events"]
     footer = (f"Test split, {len(users)} users, within-session condition, 500 sampled thresholds (project method).\n"
               "{extra}")
- 
-    # -- free text: insufficient (50) vs the largest budget tested (200, also insufficient)
-    weak = curve(f"{INSUFFICIENT_EVENTS} key events (insufficient): EER {{eer:.3f}}", free_weak, "black", 2.0, "-", True)
-    best = curve(f"{n_free_best} key events (largest tested, still insufficient): EER {{eer:.3f}}",
+
+    # -- free text: 50 key events vs the largest budget tested (200)
+    weak = curve(f"{SMALL_BUDGET_EVENTS} key events: EER {{eer:.3f}}", free_weak, "black", 2.0, "-", True)
+    best = curve(f"{n_free_best} key events (largest tested): EER {{eer:.3f}}",
                  scores_free, "#718096", 1.5, "-.", True)
-    plot_det(args.output_dir / "det_free_insufficient_enrollment.png",
-             "Free text with insufficient enrollment: DET curve",
-             f"{INSUFFICIENT_EVENTS} enrollment key events  ·  EER = {weak['eer']:.3f}  (target: below {TARGET_EER:.2f})",
+    plot_det(args.output_dir / "det_free_50_key_events.png",
+             "Free text, 50 enrollment key events: DET curve",
+             f"{SMALL_BUDGET_EVENTS} enrollment key events  ·  EER = {weak['eer']:.3f}",
              [weak, best],
              footer.format(extra=f"Same model as the selected free-text system ({s_free['observation_key_events']} key "
                                  f"events per query, {scaling}-level scaling); only the enrollment amount changes."))
-    print(f"free: EER {weak['eer']:.4f} at {INSUFFICIENT_EVENTS} key events vs {best['eer']:.4f} at {n_free_best}")
- 
-    # -- fixed text: 50 and 100 are insufficient, 200 meets the target
-    weak = curve(f"{INSUFFICIENT_EVENTS} key events (insufficient): EER {{eer:.3f}}", fixed_weak, "black", 2.0, "-", True)
-    mid = curve("100 key events (insufficient): EER {eer:.3f}", fixed_test_scores(fixed, users, 10),
+    print(f"free: EER {weak['eer']:.4f} at {SMALL_BUDGET_EVENTS} key events vs {best['eer']:.4f} at {n_free_best}")
+
+    # -- fixed text: 50, 100 and 200 key events
+    weak = curve(f"{SMALL_BUDGET_EVENTS} key events: EER {{eer:.3f}}", fixed_weak, "black", 2.0, "-", True)
+    mid = curve("100 key events: EER {eer:.3f}", fixed_test_scores(fixed, users, 10),
                 "#2b6cb0", 1.6, "-", True)
-    best = curve(f"{n_fixed_best} key events (meets target): EER {{eer:.3f}}", scores_fixed, "#718096", 1.5, "-.", True)
+    best = curve(f"{n_fixed_best} key events: EER {{eer:.3f}}", scores_fixed, "#718096", 1.5, "-.", True)
     saturated = float(((fixed_weak < 1e-6) | (fixed_weak > 1 - 1e-6)).mean())
     index = np.argmin(np.abs(weak["fpr"] - weak["fnr"]))
     note = (0.60, 0.42, f"{saturated:.1%} of scores are exactly 0 or 1 at\n"
-                        f"{INSUFFICIENT_EVENTS} key events: one real operating point\n"
+                        f"{SMALL_BUDGET_EVENTS} key events: one real operating point\n"
                         f"({weak['fnr'][index]:.0%} of genuine attempts rejected).\n"
                         "Straight segments just join such points.")
-    plot_det(args.output_dir / "det_fixed_insufficient_enrollment.png",
-             "Fixed text with insufficient enrollment: DET curve",
-             f"{INSUFFICIENT_EVENTS} enrollment key events  ·  EER = {weak['eer']:.3f}  (target: below {TARGET_EER:.2f})",
+    plot_det(args.output_dir / "det_fixed_50_key_events.png",
+             "Fixed text, 50 enrollment key events: DET curve",
+             f"{SMALL_BUDGET_EVENTS} enrollment key events  ·  EER = {weak['eer']:.3f}",
              [weak, mid, best],
              footer.format(extra="Same model as the selected fixed-text system (PCA + Gaussian Naive Bayes, "
                                  "360 key events per query); only the enrollment amount changes."),
              note=note)
-    print(f"fixed: EER {weak['eer']:.4f} at {INSUFFICIENT_EVENTS}, {mid['eer']:.4f} at 100, {best['eer']:.4f} at {n_fixed_best}")
- 
+    print(f"fixed: EER {weak['eer']:.4f} at {SMALL_BUDGET_EVENTS}, {mid['eer']:.4f} at 100, {best['eer']:.4f} at {n_fixed_best}")
+
     # ---- 2. takeover examples ------------------------------------------------------------
     info = build_takeover_data(fixed, users)
     few, enough = 5, info["p90_delay"]
@@ -331,8 +326,7 @@ def main():
         f"Fixed-text model  ·  {enough} impostor entries (≈{enough * 10} key events) since the takeover",
         f"Flagged by now:\n{info['share_flagged'](enough):.1%} of takeovers\n"
         f"({info['share_flagged'](info['median_delay']):.1%} by entry {info['median_delay']})")
- 
- 
+
+
 if __name__ == "__main__":
     main()
- 
