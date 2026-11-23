@@ -1,2 +1,0 @@
-# BobileMiometrics
-BobileMiometrics Project Code

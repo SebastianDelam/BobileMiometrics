@@ -111,14 +111,5 @@ An EER of 0.0530 means approximately 5.30%.
 The HW3 code uses 500 sampled thresholds and averages FAR and FRR at their
 closest sampled point, following the TA feedback on Homework 3.
 
-FOR THE REPORT AND SLIDES
-
-Explain the actual results, including failure to reach 5% on test.
-State enrollment/query lengths and the within-session condition.
-Keep claims about exact physical-keypress detection out of the conclusions.
-The code tests the amount of enrollment, the text conditions and the
-threshold trade-off. It does not establish a production-ready system.
-Describe AI assistance according to the course policy.
-
 Dataset DOI: https://doi.org/10.5281/zenodo.7886743
 Dataset article: https://doi.org/10.1016/j.dib.2023.109509
